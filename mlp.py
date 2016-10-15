@@ -23,12 +23,12 @@ target_data = np.load("training_set/target_data.npy")
 # Parameters
 learning_rate = 0.001
 training_epochs = 10000000
-batch_size = 1024
-display_step = 100
+batch_size = 4096
+display_step = 50
 
 # Network Parameters
-n_hidden_1 = 512 # 1st layer number of features
-n_hidden_2 = 512 # 2nd layer number of features
+n_hidden_1 = 128 # 1st layer number of features
+n_hidden_2 = 128 # 2nd layer number of features
 n_input = 440 # MNIST data input (img shape: 28*28)
 n_classes = 62 # MNIST total classes (0-9 digits)
 
@@ -71,24 +71,45 @@ accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 # Initializing the variables
 init = tf.initialize_all_variables()
 
+saver = tf.train.Saver()
+
+
+
+
+validate_x = image_data[9000:9364]
+validate_x = validate_x.reshape(validate_x.shape[0], 440)
+print (validate_x.shape)
+validate_label = target_data[9000:9364]
+validate_y = np.zeros((364, 62))
+for i in range(364):
+    validate_y[i][validate_label[i]] = 1
+
+np.save("fuckimg", validate_x[18])
+np.save("fucklabel", validate_y[18])
+best = 0.90
 # Launch the graph
 with tf.Session() as sess:
     sess.run(init)
 
     # Training cycle
     for epoch in range(training_epochs):
-        idx = np.random.choice(9364, batch_size)
+        idx = np.random.choice(9200, batch_size)
         batch_x = image_data[idx]
         batch_x = batch_x.reshape(batch_size, 440)
         batch_label = target_data[idx]
         batch_y = np.zeros((batch_size, 62))
         for i in range(batch_size):
             batch_y[i][batch_label[i]] = 1
-         
-
 
         if epoch % display_step == 0:
-            print("Accuracy:", accuracy.eval({x: batch_x, y: batch_y}))
+            acc = accuracy.eval({x:validate_x, y: validate_y})
+            train_acc = accuracy.eval({x:batch_x, y: batch_y})
+            if train_acc > 0.99:
+                best = acc
+                saver.save(sess, 'model.ckpt')
+            print("Thus far Accuracy:", acc, " Best:", best)
+            print("Traning accuracy:", train_acc)
+            
         else:
             # Run optimization op (backprop) and cost op (to get loss value)
             _ = sess.run(optimizer, feed_dict={x: batch_x, y: batch_y})

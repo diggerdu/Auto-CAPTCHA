@@ -35,7 +35,9 @@ image_data = list()
 for key, value in file_dict:
     target = map(lambda char:char_table[char], value)
     target_data.extend(target)
-    im = np.asarray(Image.open(key).convert('L')) / 255.000
+    im = np.asarray(Image.open(key).convert('L'))
+    im = im - 120
+    im = im / (255.000 - 120)
     for start in range(3, 40, 12):
         tmp = im[:,start:start+20]
         image_data.append(tmp)
