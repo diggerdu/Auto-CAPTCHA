@@ -13,18 +13,17 @@ idx = 0;
 
 for char in string.uppercase:
     char_table[char] = idx
+    char_table[char.lower()] = idx
     idx += 1
 
-for char in string.lowercase:
-    char_table[char] = idx
-    idx += 1
 
 for i in range(10):
     char_table[str(i)] = idx
     idx += 1
 
 print (len(char_table))
-with open("renew_file_dict","rb") as f:
+print (char_table)
+with open("nofile_dict","rb") as f:
     file_dict = pickle.load(f)
 
 
@@ -37,7 +36,6 @@ for key, value in file_dict.items():
     target = map(lambda char:char_table[char], value)
 
     target_data.append(target)
-    print (target)
     im = np.asarray(Image.open(key).convert('L'))
     im = im - 120
     im = im / (255.000 - 120)
@@ -51,7 +49,7 @@ for key, value in file_dict.items():
 
 target_data = np.asarray(target_data)
 target_data = np.expand_dims(target_data, axis=-1)
-target_data = np.asarray(np.arange(62) == target_data, dtype='f')
+target_data = np.asarray(np.arange(36) == target_data, dtype='f')
 target_data.shape
 target_data.shape
 image_data = np.asarray(image_data)

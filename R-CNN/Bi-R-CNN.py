@@ -36,12 +36,12 @@ WORK_DIRECTORY = 'data'
 IMAGE_HEIGHT = 20
 IMAGE_WIDTH = 80
 NUM_CHANNELS = 1
-NUM_LABELS = 62
+NUM_LABELS = 36
 VALIDATION_SIZE = 5000  # Size of the validation set.
 SEED = 66478  # Set to None for random seed.
 BATCH_SIZE = 1024
 NUM_EPOCHS = 100000000000
-EVAL_BATCH_SIZE = 48
+EVAL_BATCH_SIZE = 128
 EVAL_FREQUENCY = 4  # Number of steps between evaluations.
 RNN_STEPS = 4
 RNN_UNIT_NUM = 512
@@ -86,13 +86,14 @@ conv2_weights = tf.Variable(tf.truncated_normal(
 conv2_biases = tf.Variable(tf.constant(0.1, shape=[64], dtype=data_type()))
 fc1_weights = tf.Variable(tf.truncated_normal([1600, 512], stddev=0.1,seed=SEED,dtype=data_type()))
 fc1_biases = tf.Variable(tf.constant(0.1, shape=[512], dtype=data_type()))
-rnn_out_weights = tf.Variable(tf.truncated_normal([RNN_UNIT_NUM, NUM_LABELS], stddev=0.1, seed=SEED, dtype=data_type()))
-rnn_out_biases = tf.Variable(tf.constant(0.1, shape=[NUM_LABELS], dtype=data_type()))
+birnn_out_weights = tf.Variable(tf.truncated_normal([RNN_UNIT_NUM * 2, NUM_LABELS], stddev=0.1, seed=SEED, dtype=data_type()))
+birnn_out_biases = tf.Variable(tf.constant(0.1, shape=[NUM_LABELS], dtype=data_type()))
 
 
 # We will replicate the model structure for the training subgraph, as well
 # as the evaluation subgraphs, while sharing the trainable parameters.
 def model(data, train=False):
+    #data = tf.nn.dropout(data, keep_prob=0.5)
     data_shape = data.get_shape().as_list()
     data = tf.reshape(data, (data_shape[0], data_shape[1], data_shape[2], NUM_CHANNELS))
     # 2D convolution, with 'SAME' padding (i.e. the output feature map has
@@ -135,25 +136,28 @@ rnn_bw_net = rnn_cell.MultiRNNCell([rnn_layer] * RNN_DEPTH)
 # rnn_outputs, states = rnn.rnn(rnn_net, cnn_output_list, dtype=tf.float32)
 rnn_outputs = rnn.bidirectional_rnn(rnn_fw_net, rnn_bw_net, cnn_output_list, dtype=tf.float32)
 
-print (len(rnn_outputs[-1]))
 final_outputs = list()
-for item in rnn_outputs[-1]:
-    rnn_output = tf.sigmoid(tf.matmul(item, rnn_out_weights) + rnn_out_biases)
+for item in rnn_outputs[0]:
+    rnn_output = tf.sigmoid(tf.matmul(item, birnn_out_weights) + birnn_out_biases)
+    #rnn_output = tf.nn.dropout(rnn_output, 0.5, seed=SEED)
     final_outputs.append(rnn_output)
 
-#label_slice = tf.split(split_dim=1, num_split=RNN_STEPS, value=train_labels_node, name='label_slice')
+# label_slice = tf.split(split_dim=1, num_split=RNN_STEPS, value=train_labels_node, name='label_slice')
 
-#loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs, train_labels_node))
+# loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs, train_labels_node))
 loss_3 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs[3], train_labels_node[:,3,:]))
 loss_2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs[2], train_labels_node[:,2,:]))
 loss_1 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs[1], train_labels_node[:,1,:]))
 loss_0 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(final_outputs[0], train_labels_node[:,0,:]))
 
+loss = tf.reduce_mean([loss_0, loss_1, loss_2, loss_3])
+
 # L2 regularization for the fully connected parameters.
-# regularizers = (tf.nn.l2_loss(fc1_weights) + tf.nn.l2_loss(fc1_biases) +
-#                tf.nn.l2_loss(fc2_weights) + tf.nn.l2_loss(fc2_biases))
+regularizers = (tf.nn.l2_loss(fc1_weights) + tf.nn.l2_loss(fc1_biases) +
+                tf.nn.l2_loss(birnn_out_weights) + tf.nn.l2_loss(birnn_out_biases))
+
 # Add the regularization term to the loss.
-# loss += 5e-4 * regularizers
+loss += 5e-4 * regularizers
 
 # Optimizer: set up a variable that's incremented once per batch and
 # controls the learning rate decay.
@@ -167,12 +171,12 @@ learning_rate = tf.train.exponential_decay(
   0.95,                # Decay rate.
   staircase=True)
 '''
-learning_rate = 0.00005
+learning_rate = 0.00003
 # Use simple momentum for the optimization.
 '''
 optimizer = tf.train.MomentumOptimizer(learning_rate,0.9).minimize(loss,global_step=batch)
 '''
-optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss_3+loss_2+loss_1+loss_0)
+optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
 # Predictions for the current training minibatch.
 #train_prediction = tf.nn.softmax(outputs)
@@ -211,7 +215,8 @@ image_data = numpy.load("./image_data.npy")
 label_data = numpy.load("./target_data.npy")
 print(image_data.shape)
 print(label_data.shape)
-train_size = 2200
+train_size = 2500
+eva_size = image_data.shape[0] - train_size
 training_data = image_data[:train_size]
 training_label = label_data[:train_size]
 eva_data = image_data[train_size:]
@@ -221,6 +226,8 @@ with tf.Session() as sess:
     tf.initialize_all_variables().run()
     print('Initialized!')
     # Loop through training steps.
+
+    best = 0;
     for step in xrange(1, NUM_EPOCHS, 1):
         Idx = numpy.random.choice(train_size, BATCH_SIZE)
         batch_data = training_data[Idx]
@@ -229,29 +236,46 @@ with tf.Session() as sess:
                      train_labels_node: batch_labels}
         # Run the graph and fetch some of the nodes.
         output, _, l = sess.run(
-            [final_outputs, optimizer, loss_3],
+            [final_outputs, optimizer, loss],
             feed_dict=feed_dict)
         output = numpy.asarray(output)
         pred = numpy.argmax(output, axis=-1)
         pred = numpy.transpose(pred)
         right_label = numpy.argmax(batch_labels, axis=-1)
-        print (right_label[0][3])
-        print (pred[0][3])
-        #print (numpy.sum(numpy.where(numpy.sum(right_label == pred, axis=-1) == 3, 1, 0)))
-        print ("at epoch {0}, loss is :{1}".format(step, l))
-        '''
+        #print (right_label[0][3])
+        #print (pred[0][3])
+        traning_accurancy = (numpy.sum(numpy.where(numpy.sum(right_label == pred, axis=-1) == 4, 1, 0))) / (BATCH_SIZE * 1.000)
+        print ("at epoch {0}, loss is :{1}, accurancy at training set is :{2}".format(step, l, traning_accurancy))
+
         if step % EVAL_FREQUENCY == 0:
             elapsed_time = time.time() - start_time
             start_time = time.time()
             print('Step %d (epoch %.2f), %.1f ms' %
                   (step, float(step) * BATCH_SIZE / train_size,
                    1000 * elapsed_time / EVAL_FREQUENCY))
-            # print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-            print('Minibatch error: %.1f%%' % error_rate(predictions, batch_labels))
-            print('Validation error: %.1f%%' % error_rate(
-                eval_in_batches(eva_data, sess), eva_label))
-            sys.stdout.flush()
-        '''
+            if traning_accurancy > -1:
+                Idx = numpy.random.choice(eva_size, EVAL_BATCH_SIZE)
+                batch_data = numpy.repeat(eva_data[Idx], 8, axis=0)
+                batch_labels = numpy.repeat(eva_label[Idx], 8, axis=0)
+                feed_dict = {train_data_node: batch_data,
+                             train_labels_node: batch_labels}
+                output, l = sess.run(
+                    [final_outputs, loss],
+                    feed_dict=feed_dict)
+                output = numpy.asarray(output)
+                pred = numpy.argmax(output, axis=-1)
+                pred = numpy.transpose(pred)
+                right_label = numpy.argmax(batch_labels, axis=-1)
+                eva_accurancy = (numpy.sum(numpy.where(numpy.sum(right_label == pred, axis=-1) == 4, 1, 0))) / (
+                    BATCH_SIZE * 1.000)
+                if eva_accurancy > best:
+                    best = eva_accurancy
+                print ("at epoch {0}, accurancy in evaluate set is :{1}, loss is :{2}".format(step, eva_accurancy, l))
+                print ("############ best accurancy in evaluate set is {0} ###########".format(best))
+
+
+
+            # sys.stdout.flush()
     # Finally print the result!
     # test_error = error_rate(eval_in_batches(test_data, sess), test_label)
     # print('Test error: %.1f%%' % test_error)

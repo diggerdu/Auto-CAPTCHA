@@ -132,6 +132,7 @@ rnn_layer = tf.nn.rnn_cell.BasicRNNCell(RNN_UNIT_NUM)
 rnn_net = rnn_cell.MultiRNNCell([rnn_layer] * RNN_DEPTH)
 rnn_outputs, states = rnn.rnn(rnn_net, cnn_output_list, dtype=tf.float32)
 
+print (rnn_outputs)
 
 final_outputs = list()
 for item in rnn_outputs:
