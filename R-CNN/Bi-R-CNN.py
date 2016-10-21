@@ -171,13 +171,11 @@ learning_rate = tf.train.exponential_decay(
   0.95,                # Decay rate.
   staircase=True)
 '''
-learning_rate = 0.00003
-# Use simple momentum for the optimization.
-'''
-optimizer = tf.train.MomentumOptimizer(learning_rate,0.9).minimize(loss,global_step=batch)
-'''
+learning_rate = 0.0001
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
+
+saver = tf.train.Saver()
 # Predictions for the current training minibatch.
 #train_prediction = tf.nn.softmax(outputs)
 
@@ -269,6 +267,7 @@ with tf.Session() as sess:
                 eva_accurancy = (numpy.sum(numpy.where(numpy.sum(right_label == pred, axis=-1) == 4, 1, 0))) / (
                     BATCH_SIZE * 1.000)
                 if eva_accurancy > best:
+                    saver.save(sess, "checkpoint/model.ckpt")
                     best = eva_accurancy
                 print ("at epoch {0}, accurancy in evaluate set is :{1}, loss is :{2}".format(step, eva_accurancy, l))
                 print ("############ best accurancy in evaluate set is {0} ###########".format(best))
