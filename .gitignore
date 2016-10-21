@@ -1,4 +1,5 @@
 *.npy
 *.jpg
 .idea*
+*.ckpt
 mergedata
